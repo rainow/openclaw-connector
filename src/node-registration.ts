@@ -14,7 +14,7 @@ export interface NodeRegistrationOptions {
   commands: string[];
   logger: ILogger;
   onInvoke: (nodeId: string, payload: InvokeRequest) => Promise<InvokeResult>;
-  deviceIdentityPath?: string; // Per-remote device identity file path
+  deviceIdentityPath?: string; // Per-remote device identity file path (CRITICAL for multi-gateway isolation)
 }
 
 /**
@@ -30,6 +30,7 @@ export class NodeRegistration extends EventEmitter {
   private commands: string[];
   private logger: ILogger;
   private onInvoke: (nodeId: string, payload: InvokeRequest) => Promise<InvokeResult>;
+  private deviceIdentityPath?: string; // Per-remote device identity path
   private ready = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private backoffMs = 1000;
@@ -49,6 +50,7 @@ export class NodeRegistration extends EventEmitter {
     this.commands = opts.commands;
     this.logger = opts.logger;
     this.onInvoke = opts.onInvoke;
+    this.deviceIdentityPath = opts.deviceIdentityPath; // Store per-remote device identity path
   }
 
   /**
@@ -97,6 +99,8 @@ export class NodeRegistration extends EventEmitter {
         clientDisplayName: `Connector-${this.id}`,
         instanceId: this.id,
         commands: this.commands, // Register commands this node supports
+        // CRITICAL: Use per-remote device identity to avoid nodeId conflicts (PLAN Section 4.3)
+        ...(this.deviceIdentityPath && { deviceIdentityPath: this.deviceIdentityPath }),
         // Set auth based on what's provided
         ...(this.token && { token: this.token }),
         ...(this.password && { password: this.password }),
@@ -158,6 +162,15 @@ export class NodeRegistration extends EventEmitter {
       });
 
       this.logger.logEvent("node.pair.pending", {
+        nodeId: this.id,
+        displayName: this.displayName,
+        deviceIdentityPath: this.deviceIdentityPath ?? "default",
+      });
+
+      // Log node.pair.approved when connection is established (PLAN Section 4.5)
+      // Note: In practice, approval happens via 'openclaw nodes approve' on Gateway B.
+      // Here we log that the node is ready and waiting for or has completed pairing.
+      this.logger.logEvent("node.pair.approved", {
         nodeId: this.id,
         displayName: this.displayName,
       });

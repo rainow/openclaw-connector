@@ -30,6 +30,8 @@ export class Bridge {
   private breakers = new Map<string, ICircuitBreaker>();
   private commandHandlers = new Map<string, (params: unknown, client: IRemoteClient) => Promise<unknown>>();
   private commandPolicy: CommandPolicy;
+  // Per-remote command policy overrides (PLAN Section 4.1)
+  private remoteCommandPolicies = new Map<string, CommandPolicy>();
   private breakerConfig: BridgeOptions["breakerConfig"];
   private logger: ILogger;
 
@@ -39,8 +41,13 @@ export class Bridge {
     this.logger = opts.logger;
   }
 
-  registerRemote(remoteId: string, client: IRemoteClient): void {
+  registerRemote(remoteId: string, client: IRemoteClient, remotePolicy?: CommandPolicy): void {
     this.remoteClients.set(remoteId, client);
+
+    // Store per-remote policy override if provided (PLAN Section 4.1)
+    if (remotePolicy) {
+      this.remoteCommandPolicies.set(remoteId, remotePolicy);
+    }
 
     if (this.breakerConfig.enabled) {
       const breaker = new CircuitBreaker({
@@ -67,6 +74,13 @@ export class Bridge {
 
   /**
    * Main invoke handler: called when Gateway B sends node.invoke.request
+   *
+   * Flow follows PLAN Section 5:
+   * 1) Map nodeRegistration to remoteId
+   * 2) Check command policy (allow_all / allow_list)
+   * 3) Check remote circuit breaker state (OPEN = fast fail)
+   * 4) Call corresponding RemoteClient handler
+   * 5) Record success/failure and update breaker state
    */
   async handleInvoke(nodeId: string, payload: InvokeRequest): Promise<InvokeResult> {
     const invokeId = payload.id;
@@ -97,7 +111,16 @@ export class Bridge {
       };
     }
 
-    // Step 3: Check breaker state
+    // Step 3: Check command permission BEFORE breaker (PLAN Section 5 order fix)
+    const isAllowed = this.isCommandAllowed(command, remoteId);
+    if (!isAllowed) {
+      return {
+        ok: false,
+        error: { code: "FORBIDDEN", message: `command ${command} not allowed` },
+      };
+    }
+
+    // Step 4: Check breaker state
     const breaker = this.breakers.get(remoteId);
     if (breaker && !breaker.canExecute()) {
       const state = breaker.getState();
@@ -111,15 +134,6 @@ export class Bridge {
       return {
         ok: false,
         error: { code: "CIRCUIT_OPEN", message: `circuit breaker ${state} for ${remoteId}` },
-      };
-    }
-
-    // Step 4: Check command permission
-    const isAllowed = this.isCommandAllowed(command, remoteId);
-    if (!isAllowed) {
-      return {
-        ok: false,
-        error: { code: "FORBIDDEN", message: `command ${command} not allowed` },
       };
     }
 
@@ -186,17 +200,18 @@ export class Bridge {
 
   /**
    * Check if command is allowed based on policy
+   * Supports per-remote override (PLAN Section 4.1)
    */
   private isCommandAllowed(command: string, remoteId: string): boolean {
-    // TODO: Support per-remote policy override
-    // For now, use global policy
+    // Use per-remote policy if available, otherwise fall back to global
+    const effectivePolicy = this.remoteCommandPolicies.get(remoteId) ?? this.commandPolicy;
 
-    if (this.commandPolicy.mode === "allow_all") {
+    if (effectivePolicy.mode === "allow_all") {
       return true;
     }
 
-    if (this.commandPolicy.mode === "allow_list") {
-      return this.commandPolicy.allowList?.includes(command) ?? false;
+    if (effectivePolicy.mode === "allow_list") {
+      return effectivePolicy.allowList?.includes(command) ?? false;
     }
 
     return false;

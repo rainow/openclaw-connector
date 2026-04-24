@@ -42,13 +42,19 @@ export class CircuitBreaker implements ICircuitBreaker {
       const elapsed = Date.now() - this.lastFailureTime;
       if (elapsed >= this.openMs) {
         this.transitionTo("HALF_OPEN");
+        this.halfOpenInFlight = 0; // Reset in-flight counter when entering HALF_OPEN
         return this.canExecute(); // retry after transition
       }
       return false;
     }
 
     if (this.state === "HALF_OPEN") {
-      return this.halfOpenInFlight < this.halfOpenMaxInFlight;
+      // FIX: Increment in-flight counter to properly limit probe requests
+      if (this.halfOpenInFlight < this.halfOpenMaxInFlight) {
+        this.halfOpenInFlight++;
+        return true;
+      }
+      return false;
     }
 
     return false;
@@ -59,10 +65,10 @@ export class CircuitBreaker implements ICircuitBreaker {
       this.halfOpenInFlight = Math.max(0, this.halfOpenInFlight - 1);
       if (this.halfOpenInFlight === 0) {
         this.transitionTo("CLOSED");
-        this.failureCount = 0;
+        this.failureCount = 0; // Full reset on successful probe
       }
     } else if (this.state === "CLOSED") {
-      // Reset failure count on success
+      // Reset failure count on success (decrement approach for gradual recovery)
       this.failureCount = Math.max(0, this.failureCount - 1);
     }
   }

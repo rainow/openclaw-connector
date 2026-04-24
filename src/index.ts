@@ -81,7 +81,8 @@ async function main() {
       });
 
       remoteClients.set(remote.id, remoteClient);
-      bridge.registerRemote(remote.id, remoteClient);
+      // Pass per-remote commandPolicy override if configured (PLAN Section 4.1)
+      bridge.registerRemote(remote.id, remoteClient, remote.commandPolicy);
 
       // Create node registration for this remote
       const nodeId = `connector-${remote.id}`;
