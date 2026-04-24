@@ -1,0 +1,34 @@
+{
+  "gatewayB": {
+    "url": "ws://127.0.0.1:18789",
+    "token": "${GATEWAY_B_TOKEN}"
+  },
+  "commandPolicy": {
+    "mode": "allow_all"
+  },
+  "breaker": {
+    "enabled": true,
+    "failureThreshold": 3,
+    "openMs": 15000,
+    "halfOpenMaxInFlight": 1
+  },
+  "remotes": [
+    {
+      "id": "machine-a",
+      "url": "wss://remote-a.example.com:18789",
+      "token": "${GATEWAY_A_TOKEN}",
+      "enabled": true,
+      "timeoutMs": 30000,
+      "commandPolicy": {
+        "mode": "allow_all"
+      }
+    },
+    {
+      "id": "office-server",
+      "url": "wss://office.example.com:18789",
+      "token": "${GATEWAY_C_TOKEN}",
+      "enabled": true,
+      "timeoutMs": 30000
+    }
+  ]
+}

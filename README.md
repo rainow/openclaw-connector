@@ -1,0 +1,279 @@
+# OpenClaw Connector
+
+A multi-gateway control connector that allows Gateway B to manage and invoke commands on multiple remote OpenClaw gateways, while keeping all gateways in their native gateway mode.
+
+**Languages**: [中文](./README-CN.md) | English
+
+## Features
+
+### Core Features (M2)
+- **Multi-Gateway Support**: Control multiple remote gateways from a single Gateway B
+- **Circuit Breaker**: Automatic failure handling with state machine (CLOSED → OPEN → HALF_OPEN)
+- **Command Policies**: Support for allow_all (default) and allow_list command filtering
+- **Structured Logging**: JSON-based logging with sensitive data masking
+- **Per-Remote Isolation**: Failures on one remote don't affect others
+- **Environment Variable Substitution**: Flexible credential management via `${VAR_NAME}`
+
+### Optional Enhancements (M3)
+- **Device Identity Manager**: Isolated device identity for each remote gateway (no node conflicts)
+- **Command Catalog**: Extensible command registry with enable/disable support
+- **Error Classifier**: Intelligent error categorization for precise circuit breaker and retry logic
+
+## Project Structure
+
+```
+openclaw-connector/
+├── docs/                        # Documentation
+│   ├── 00_START_HERE.md         # Start here!
+│   ├── PLAN.md                  # Architecture plan
+│   ├── DEVELOPMENT.md           # Development guide
+│   ├── DEPLOYMENT.md            # Production deployment
+│   ├── OPENCLAW_INTEGRATION.md  # Integration guide
+│   ├── QUICK_REFERENCE.md       # Quick reference
+│   ├── OPTIONAL_ENHANCEMENTS.md # M3 optional features guide
+│   ├── QUICK_START_ENHANCEMENTS.md # M3 quick start examples
+│   ├── M3_ENHANCEMENTS.md       # M3 completion report
+│   ├── M2_*.md                  # M2 documentation
+│   └── ...
+├── src/
+│   ├── index.ts                 # Main entry point
+│   ├── types.ts                 # Core type definitions
+│   ├── config.ts                # Configuration loading
+│   ├── logger.ts                # Structured logging
+│   ├── remote-client.ts         # Remote gateway operator connection
+│   ├── node-registration.ts     # Local node registration to Gateway B
+│   ├── bridge.ts                # Core routing and invoke handling
+│   ├── device-identity-manager.ts # Device identity manager (M3)
+│   ├── commands/                # Command handlers
+│   │   ├── index.ts
+│   │   ├── command-catalog.ts   # Command registry (M3)
+│   │   ├── sessions-list.ts
+│   │   ├── sessions-send.ts
+│   │   ├── nodes-list.ts
+│   │   ├── nodes-invoke.ts
+│   │   └── gateway-status.ts
+│   └── resilience/
+│       ├── circuit-breaker.ts   # Circuit breaker implementation
+│       └── error-classifier.ts  # Error classification (M3)
+├── package.json
+├── tsconfig.json
+├── connector.config.example.json
+└── README.md
+```
+
+## Setup
+
+### 1. Install Dependencies
+
+```bash
+npm install
+```
+
+### 2. Create Configuration
+
+Copy the example configuration and customize for your environment:
+
+```bash
+cp connector.config.example.json connector.config.json
+```
+
+Edit `connector.config.json`:
+
+- Update `gatewayB.url` to point to your main Gateway B
+- Add your remote gateways in the `remotes` array
+- Use environment variables for sensitive data like `${GATEWAY_B_TOKEN}`
+
+### 3. Set Environment Variables
+
+```bash
+export GATEWAY_B_TOKEN="your-gateway-b-token"
+export GATEWAY_A_TOKEN="your-gateway-a-token"
+export GATEWAY_C_TOKEN="your-gateway-c-token"
+```
+
+### 4. Build and Run
+
+Development mode:
+```bash
+npm run dev
+```
+
+Production build:
+```bash
+npm run build
+npm start
+```
+
+## Configuration Reference
+
+### Global Configuration
+
+```json
+{
+  "gatewayB": {
+    "url": "ws://127.0.0.1:18789",
+    "token": "${GATEWAY_B_TOKEN}"
+  },
+  "commandPolicy": {
+    "mode": "allow_all"
+  },
+  "breaker": {
+    "enabled": true,
+    "failureThreshold": 3,
+    "openMs": 15000,
+    "halfOpenMaxInFlight": 1
+  },
+  "remotes": [...]
+}
+```
+
+### Remote Configuration
+
+```json
+{
+  "id": "machine-a",
+  "url": "wss://remote-a.example.com:18789",
+  "token": "${GATEWAY_A_TOKEN}",
+  "enabled": true,
+  "timeoutMs": 30000,
+  "commandPolicy": {
+    "mode": "allow_all"
+  }
+}
+```
+
+### Command Policy Modes
+
+- **allow_all** (default): All registered commands are allowed
+- **allow_list**: Only commands in the `allowList` are permitted
+
+```json
+{
+  "mode": "allow_list",
+  "allowList": ["sessions.list", "gateway.status"]
+}
+```
+
+### Circuit Breaker Options
+
+- `enabled`: Enable/disable circuit breaker (default: true)
+- `failureThreshold`: Consecutive failures before opening (default: 3)
+- `openMs`: Time to wait in OPEN state before probing (default: 15000ms)
+- `halfOpenMaxInFlight`: Max concurrent requests in HALF_OPEN (default: 1)
+
+## Supported Commands
+
+1. **sessions.list** - List all sessions on the remote gateway
+2. **sessions.send** - Send a message to a session on the remote gateway
+3. **nodes.list** - List all nodes managed by the remote gateway
+4. **nodes.invoke** - Invoke a command on a node managed by the remote gateway
+5. **gateway.status** - Get health status of the remote gateway
+
+## Logging
+
+Logs are output as JSON for easy parsing and aggregation.
+
+### Log Levels
+
+- **DEBUG**: Low-level diagnostic messages
+- **INFO**: General informational messages
+- **WARN**: Warning messages
+- **ERROR**: Error messages
+
+### Key Events
+
+- `remote.connect.success` / `remote.connect.fail` - Remote gateway connection state
+- `node.connect.success` / `node.connect.fail` - Node registration state
+- `invoke.start` / `invoke.success` / `invoke.fail` - Command invocation lifecycle
+- `breaker.open` / `breaker.half_open` / `breaker.close` - Circuit breaker state changes
+
+### Sensitive Data Masking
+
+The logger automatically masks sensitive fields (token, password, secret, apikey, auth, authorization, credential).
+
+## Documentation
+
+For detailed documentation, see the `docs/` directory:
+
+### Getting Started
+- **[docs/00_START_HERE.md](docs/00_START_HERE.md)** - Start here for overview
+- **[docs/QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md)** - Quick command reference
+
+### Architecture & Design
+- **[docs/PLAN.md](docs/PLAN.md)** - Architecture and design decisions
+- **[docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md)** - Complete project overview
+
+### Development
+- **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** - Development guide
+- **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** - Production deployment guide
+- **[docs/OPENCLAW_INTEGRATION.md](docs/OPENCLAW_INTEGRATION.md)** - GatewayClient integration guide
+
+### Optional Enhancements (M3)
+- **[docs/OPTIONAL_ENHANCEMENTS.md](docs/OPTIONAL_ENHANCEMENTS.md)** - M3 features guide
+- **[docs/QUICK_START_ENHANCEMENTS.md](docs/QUICK_START_ENHANCEMENTS.md)** - M3 quick start examples
+- **[docs/M3_ENHANCEMENTS.md](docs/M3_ENHANCEMENTS.md)** - M3 completion report
+
+### Milestones
+- **[docs/M2_SUMMARY.md](docs/M2_SUMMARY.md)** - M2 milestone summary
+
+## Status
+
+✅ **M2 Complete**: Real GatewayClient integration with WebSocket connections  
+✅ **M3 Complete**: Optional enhancements for reliability, scalability, and maintainability
+
+## Troubleshooting
+
+### Connection Issues
+
+Check logs for:
+- Network connectivity errors
+- Authentication failures
+- Circuit breaker state transitions
+
+Use the JSON logs to diagnose:
+```bash
+cat connector-logs.log | jq '.[] | select(.event=="remote.connect.fail")'
+```
+
+### Command Failures
+
+1. Verify command is in allowed list (if using allow_list policy)
+2. Check circuit breaker state
+3. Verify remote gateway has the requested command available
+4. Check timeout settings
+
+### Performance
+
+If experiencing timeouts:
+1. Increase per-remote `timeoutMs`
+2. Check circuit breaker `halfOpenMaxInFlight` setting
+3. Monitor network latency to remotes
+
+## Architecture
+
+```
+┌─────────────────────┐
+│    Gateway B (主控) │
+└──────────┬──────────┘
+           │
+      (node role)
+           │
+┌──────────┴──────────────────────────┐
+│      Connector Process              │
+│  ┌────────────────────────────────┐ │
+│  │  Bridge (routing + breaker)    │ │
+│  └─┬──────────────────────────────┘ │
+│    │                                │
+│  ┌─┴──────────┐  ┌──────────────┐   │
+│  │ RemoteA    │  │ NodeRegA     │   │
+│  │ (operator) │  │ (node)       │   │
+│  └─┬──────────┘  └──────────────┘   │
+│    │                                │
+│    ├────────────> Gateway A         │
+│    └────────────> Gateway B         │
+└────────────────────────────────────┘
+```
+
+## License
+
+MIT
