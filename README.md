@@ -6,15 +6,12 @@ A multi-gateway control connector that allows Gateway B to manage and invoke com
 
 ## Features
 
-### Core Features (M2)
 - **Multi-Gateway Support**: Control multiple remote gateways from a single Gateway B
 - **Circuit Breaker**: Automatic failure handling with state machine (CLOSED → OPEN → HALF_OPEN)
 - **Command Policies**: Support for allow_all (default) and allow_list command filtering
 - **Structured Logging**: JSON-based logging with sensitive data masking
 - **Per-Remote Isolation**: Failures on one remote don't affect others
 - **Environment Variable Substitution**: Flexible credential management via `${VAR_NAME}`
-
-### Optional Enhancements (M3)
 - **Device Identity Manager**: Isolated device identity for each remote gateway (no node conflicts)
 - **Command Catalog**: Extensible command registry with enable/disable support
 - **Error Classifier**: Intelligent error categorization for precise circuit breaker and retry logic
@@ -23,18 +20,6 @@ A multi-gateway control connector that allows Gateway B to manage and invoke com
 
 ```
 openclaw-connector/
-├── docs/                        # Documentation
-│   ├── 00_START_HERE.md         # Start here!
-│   ├── PLAN.md                  # Architecture plan
-│   ├── DEVELOPMENT.md           # Development guide
-│   ├── DEPLOYMENT.md            # Production deployment
-│   ├── OPENCLAW_INTEGRATION.md  # Integration guide
-│   ├── QUICK_REFERENCE.md       # Quick reference
-│   ├── OPTIONAL_ENHANCEMENTS.md # M3 optional features guide
-│   ├── QUICK_START_ENHANCEMENTS.md # M3 quick start examples
-│   ├── M3_ENHANCEMENTS.md       # M3 completion report
-│   ├── M2_*.md                  # M2 documentation
-│   └── ...
 ├── src/
 │   ├── index.ts                 # Main entry point
 │   ├── types.ts                 # Core type definitions
@@ -43,10 +28,10 @@ openclaw-connector/
 │   ├── remote-client.ts         # Remote gateway operator connection
 │   ├── node-registration.ts     # Local node registration to Gateway B
 │   ├── bridge.ts                # Core routing and invoke handling
-│   ├── device-identity-manager.ts # Device identity manager (M3)
+│   ├── device-identity-manager.ts # Device identity manager
 │   ├── commands/                # Command handlers
 │   │   ├── index.ts
-│   │   ├── command-catalog.ts   # Command registry (M3)
+│   │   ├── command-catalog.ts   # Command registry
 │   │   ├── sessions-list.ts
 │   │   ├── sessions-send.ts
 │   │   ├── nodes-list.ts
@@ -54,7 +39,7 @@ openclaw-connector/
 │   │   └── gateway-status.ts
 │   └── resilience/
 │       ├── circuit-breaker.ts   # Circuit breaker implementation
-│       └── error-classifier.ts  # Error classification (M3)
+│       └── error-classifier.ts  # Error classification
 ├── package.json
 ├── tsconfig.json
 ├── connector.config.example.json
@@ -203,15 +188,6 @@ Logs are output as JSON for easy parsing and aggregation.
 ### Sensitive Data Masking
 
 The logger automatically masks sensitive fields (token, password, secret, apikey, auth, authorization, credential).
-
-## Documentation
-
-For detailed documentation, refer to the `docs/` directory.
-
-## Status
-
-✅ **M2 Complete**: Real GatewayClient integration with WebSocket connections  
-✅ **M3 Complete**: Optional enhancements for reliability, scalability, and maintainability
 
 ## Troubleshooting
 

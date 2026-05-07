@@ -6,15 +6,12 @@
 
 ## 功能特性
 
-### 核心功能 (M2)
 - **多网关支持**: 从单个 Gateway B 控制多个远程网关
 - **断路器**: 自动故障处理，包含状态机 (CLOSED → OPEN → HALF_OPEN)
 - **命令策略**: 支持 allow_all（默认）和 allow_list 命令过滤
 - **结构化日志**: 基于 JSON 的日志记录，带敏感数据脱敏
 - **单网关隔离**: 一个远程网关的故障不会影响其他网关
 - **环境变量替换**: 通过 `${VAR_NAME}` 灵活管理凭证
-
-### 可选增强功能 (M3)
 - **设备身份管理器**: 为每个远程网关隔离设备身份（避免 NodeId 冲突）
 - **命令目录**: 可扩展的命令注册表，支持启用/禁用
 - **错误分类器**: 智能错误分类，用于精确的断路器和重试逻辑
@@ -23,18 +20,6 @@
 
 ```
 openclaw-connector/
-├── docs/                        # 文档
-│   ├── 00_START_HERE.md         # 从这里开始！
-│   ├── PLAN.md                  # 架构计划
-│   ├── DEVELOPMENT.md           # 开发指南
-│   ├── DEPLOYMENT.md            # 生产环境部署
-│   ├── OPENCLAW_INTEGRATION.md  # 集成指南
-│   ├── QUICK_REFERENCE.md       # 快速参考
-│   ├── OPTIONAL_ENHANCEMENTS.md # M3 可选功能指南
-│   ├── QUICK_START_ENHANCEMENTS.md # M3 快速开始示例
-│   ├── M3_ENHANCEMENTS.md       # M3 完成报告
-│   ├── M2_*.md                  # M2 文档
-│   └── ...
 ├── src/
 │   ├── index.ts                 # 主入口点
 │   ├── types.ts                 # 核心类型定义
@@ -43,10 +28,10 @@ openclaw-connector/
 │   ├── remote-client.ts         # 远程网关操作员连接
 │   ├── node-registration.ts     # 本地节点注册到 Gateway B
 │   ├── bridge.ts                # 核心路由和调用处理
-│   ├── device-identity-manager.ts # 设备身份管理器 (M3)
+│   ├── device-identity-manager.ts # 设备身份管理器
 │   ├── commands/                # 命令处理器
 │   │   ├── index.ts
-│   │   ├── command-catalog.ts   # 命令注册表 (M3)
+│   │   ├── command-catalog.ts   # 命令注册表
 │   │   ├── sessions-list.ts
 │   │   ├── sessions-send.ts
 │   │   ├── nodes-list.ts
@@ -54,7 +39,7 @@ openclaw-connector/
 │   │   └── gateway-status.ts
 │   └── resilience/
 │       ├── circuit-breaker.ts   # 断路器实现
-│       └── error-classifier.ts  # 错误分类 (M3)
+│       └── error-classifier.ts  # 错误分类
 ├── package.json
 ├── tsconfig.json
 ├── connector.config.example.json
@@ -203,15 +188,6 @@ npm start
 ### 敏感数据脱敏
 
 日志记录器自动脱敏敏感字段（token、password、secret、apikey、auth、authorization、credential）。
-
-## 文档
-
-详细文档请参阅 `docs/` 目录。
-
-## 状态
-
-✅ **M2 完成**: 真实 GatewayClient 集成与 WebSocket 连接  
-✅ **M3 完成**: 可选增强功能实现，提升可靠性、可扩展性和可维护性
 
 ## 故障排除
 
