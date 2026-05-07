@@ -161,13 +161,26 @@ npm start
 - `openMs`: Time to wait in OPEN state before probing (default: 15000ms)
 - `halfOpenMaxInFlight`: Max concurrent requests in HALF_OPEN (default: 1)
 
+## Authentication
+
+Use the `token` field for gateway authentication:
+
+```json
+{
+  "id": "gateway-a",
+  "url": "ws://gateway-a.local:18789",
+  "token": "your-auth-token"
+}
+```
+
 ## Supported Commands
 
 1. **sessions.list** - List all sessions on the remote gateway
 2. **sessions.send** - Send a message to a session on the remote gateway
-3. **nodes.list** - List all nodes managed by the remote gateway
-4. **nodes.invoke** - Invoke a command on a node managed by the remote gateway
-5. **gateway.status** - Get health status of the remote gateway
+3. **sessions.get_messages** - Get messages from a session on the remote gateway (with automatic fallback to `sessions.get`)
+4. **nodes.list** - List all nodes managed by the remote gateway
+5. **nodes.invoke** - Invoke a command on a node managed by the remote gateway
+6. **gateway.status** - Get health status of the remote gateway
 
 ## Logging
 
@@ -193,28 +206,7 @@ The logger automatically masks sensitive fields (token, password, secret, apikey
 
 ## Documentation
 
-For detailed documentation, see the `docs/` directory:
-
-### Getting Started
-- **[docs/00_START_HERE.md](docs/00_START_HERE.md)** - Start here for overview
-- **[docs/QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md)** - Quick command reference
-
-### Architecture & Design
-- **[docs/PLAN.md](docs/PLAN.md)** - Architecture and design decisions
-- **[docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md)** - Complete project overview
-
-### Development
-- **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** - Development guide
-- **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** - Production deployment guide
-- **[docs/OPENCLAW_INTEGRATION.md](docs/OPENCLAW_INTEGRATION.md)** - GatewayClient integration guide
-
-### Optional Enhancements (M3)
-- **[docs/OPTIONAL_ENHANCEMENTS.md](docs/OPTIONAL_ENHANCEMENTS.md)** - M3 features guide
-- **[docs/QUICK_START_ENHANCEMENTS.md](docs/QUICK_START_ENHANCEMENTS.md)** - M3 quick start examples
-- **[docs/M3_ENHANCEMENTS.md](docs/M3_ENHANCEMENTS.md)** - M3 completion report
-
-### Milestones
-- **[docs/M2_SUMMARY.md](docs/M2_SUMMARY.md)** - M2 milestone summary
+For detailed documentation, refer to the `docs/` directory.
 
 ## Status
 
@@ -248,6 +240,29 @@ If experiencing timeouts:
 1. Increase per-remote `timeoutMs`
 2. Check circuit breaker `halfOpenMaxInFlight` setting
 3. Monitor network latency to remotes
+
+## Advanced: SSO Cookie-based Authentication (Optional)
+
+For gateways protected by Single Sign-On (SSO), you can optionally use the `cookie` field to pass session cookies:
+
+```json
+{
+  "id": "gateway-b",
+  "url": "wss://gateway-b.example.com:18789",
+  "token": "your-auth-token",
+  "cookie": "session_id=xxx; sso_token=yyy"
+}
+```
+
+**How to extract cookies:**
+1. Open the gateway URL in your browser
+2. Complete SSO login
+3. Open Developer Tools (F12) → Network tab
+4. Inspect any authenticated HTTP request
+5. Copy the value of the `Cookie` header
+6. Paste it into the connector config
+
+**Note**: Both `token` and `cookie` can be used together for dual-layer authentication. Cookies are passed in the WebSocket handshake headers to bypass SSO verification.
 
 ## Architecture
 

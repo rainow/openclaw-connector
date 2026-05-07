@@ -4,35 +4,40 @@
 
 import { EventEmitter } from "events";
 import type { ILogger, IRemoteClient } from "./types.js";
+import { GatewayClientLite, type GatewayClientOptions } from "./gateway-client-lite.js";
+import { loadOrCreateDeviceIdentity } from "./device-identity-utils.js";
 
 export interface RemoteClientOptions {
   id: string;
   url: string;
   token?: string;
   password?: string;
+  cookie?: string;
   timeoutMs?: number;
   logger: ILogger;
+  deviceIdentityPath?: string;
 }
 
 /**
- * RemoteClient: Real implementation using GatewayClient from openclaw
+ * RemoteClient: Real implementation using GatewayClientLite
  * Connects as an operator to a remote Gateway and proxies requests
  */
+
 export class RemoteClient extends EventEmitter implements IRemoteClient {
   private id: string;
   private url: string;
   private token?: string;
   private password?: string;
+  private cookie?: string;
   private timeoutMs: number;
   private logger: ILogger;
+  private deviceIdentityPath?: string;
   private ready = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private backoffMs = 1000;
   
-  // GatewayClient instance will be created dynamically
-  private gatewayClientInstance: any = null;
-  // Cache the GatewayClient class
-  private static gatewayClientClass: any = null;
+  // GatewayClientLite instance
+  private gatewayClientInstance: GatewayClientLite | null = null;
 
   constructor(opts: RemoteClientOptions) {
     super();
@@ -40,28 +45,10 @@ export class RemoteClient extends EventEmitter implements IRemoteClient {
     this.url = opts.url;
     this.token = opts.token;
     this.password = opts.password;
+    this.cookie = opts.cookie;
     this.timeoutMs = opts.timeoutMs ?? 30000;
     this.logger = opts.logger;
-  }
-
-  /**
-   * Lazy-load GatewayClient from openclaw package
-   * Returns null if openclaw is not available
-   */
-  private getGatewayClientClass(): any {
-    if (RemoteClient.gatewayClientClass !== null) {
-      return RemoteClient.gatewayClientClass;
-    }
-
-    try {
-      // Try to load from openclaw package
-      const openclawModule = require("openclaw");
-      RemoteClient.gatewayClientClass = openclawModule.GatewayClient ?? null;
-      return RemoteClient.gatewayClientClass;
-    } catch {
-      // openclaw not available
-      return null;
-    }
+    this.deviceIdentityPath = opts.deviceIdentityPath;
   }
 
   isReady(): boolean {
@@ -145,23 +132,31 @@ export class RemoteClient extends EventEmitter implements IRemoteClient {
     });
 
     try {
-      const GatewayClient = this.getGatewayClientClass();
-      if (!GatewayClient) {
-        throw new Error(
-          "GatewayClient not available. Make sure openclaw is installed."
-        );
+      // Load or create device identity for this remote connection
+      let deviceIdentity = undefined;
+      if (this.deviceIdentityPath) {
+        try {
+          deviceIdentity = loadOrCreateDeviceIdentity(this.deviceIdentityPath);
+          this.logger.debug(
+            `Loaded device identity from ${this.deviceIdentityPath}: ${deviceIdentity.deviceId}`
+          );
+        } catch (err) {
+          this.logger.debug(
+            `Failed to load device identity from ${this.deviceIdentityPath}: ${String(err)}`
+          );
+          // Continue without device identity - it will use client.id as fallback
+        }
       }
 
-      // Create GatewayClient instance with operator mode
-      const clientOpts: any = {
+      const clientOpts: GatewayClientOptions = {
         url: this.url,
-        mode: "operator", // Connect as operator
-        clientName: "connector", // Identify self as connector
-        clientDisplayName: `Connector-${this.id}`,
-        timeoutMs: this.timeoutMs,
+        requestTimeoutMs: this.timeoutMs,
+        role: "operator",  // RemoteClient connects as an operator, not a node
         // Set auth based on what's provided
         ...(this.token && { token: this.token }),
         ...(this.password && { password: this.password }),
+        ...(this.cookie && { cookie: this.cookie }),
+        ...(deviceIdentity && { deviceIdentity }),
       };
 
       // Wire up event handlers
@@ -190,11 +185,27 @@ export class RemoteClient extends EventEmitter implements IRemoteClient {
       };
 
       // Initialize and start client
-      this.gatewayClientInstance = new GatewayClient(clientOpts);
-      this.gatewayClientInstance.start();
+      this.gatewayClientInstance = new GatewayClientLite(clientOpts);
+      
+      // Wait for connection event
+      await new Promise<void>((resolve, reject) => {
+        if (!this.gatewayClientInstance) {
+          reject(new Error("GatewayClientLite not created"));
+          return;
+        }
 
-      // Wait for successful handshake
-      await this.waitForReady();
+        const timeout = setTimeout(() => {
+          reject(new Error(`Connection timeout after ${this.timeoutMs}ms`));
+        }, this.timeoutMs);
+
+        // Listen for connection event
+        this.gatewayClientInstance.on("connected", () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+
+        this.gatewayClientInstance.start();
+      });
 
       this.ready = true;
       this.backoffMs = 1000; // Reset backoff on successful connection
@@ -222,7 +233,7 @@ export class RemoteClient extends EventEmitter implements IRemoteClient {
 
     if (this.gatewayClientInstance) {
       try {
-        await this.gatewayClientInstance.stop();
+        this.gatewayClientInstance.stop();
       } catch (err) {
         this.logger.debug(`Error stopping gateway client: ${String(err)}`);
       }
@@ -231,42 +242,6 @@ export class RemoteClient extends EventEmitter implements IRemoteClient {
 
     this.logger.logEvent("remote.disconnect", {
       remoteId: this.id,
-    });
-  }
-
-  /**
-   * Wait for GatewayClient to become ready
-   * Uses a simple polling mechanism with timeout
-   */
-  private async waitForReady(): Promise<void> {
-    const maxWaitMs = 10000;
-    const pollIntervalMs = 100;
-    const startTime = Date.now();
-
-    return new Promise<void>((resolve, reject) => {
-      const poll = () => {
-        if (!this.gatewayClientInstance) {
-          reject(new Error("GatewayClient was destroyed"));
-          return;
-        }
-
-        // Check if ws is open (GatewayClient connected)
-        if (this.gatewayClientInstance.ws && this.gatewayClientInstance.ws.readyState === 1) {
-          // WebSocket.OPEN = 1
-          resolve();
-          return;
-        }
-
-        const elapsed = Date.now() - startTime;
-        if (elapsed > maxWaitMs) {
-          reject(new Error(`Gateway client connect timeout after ${maxWaitMs}ms`));
-          return;
-        }
-
-        setTimeout(poll, pollIntervalMs);
-      };
-
-      poll();
     });
   }
 
@@ -283,10 +258,10 @@ export class RemoteClient extends EventEmitter implements IRemoteClient {
     }
 
     try {
-      const data = await (this.gatewayClientInstance.request as (method: string, params?: unknown, opts?: any) => Promise<T>)(
+      const data = await this.gatewayClientInstance.request<T>(
         method,
         params,
-        { timeoutMs: timeoutMs ?? this.timeoutMs }
+        timeoutMs ?? this.timeoutMs
       );
 
       return { ok: true, data };
@@ -301,10 +276,11 @@ export class RemoteClient extends EventEmitter implements IRemoteClient {
    */
   private extractErrorCode(err: unknown): string {
     if (err instanceof Error) {
-      if (err.message.includes("timeout")) return "TIMEOUT";
-      if (err.message.includes("ECONNREFUSED")) return "CONNECTION_REFUSED";
-      if (err.message.includes("ENOTFOUND")) return "NETWORK_ERROR";
-      if ("code" in err) return String(err.code);
+      const msg = err.message.toLowerCase();
+      if (msg.includes("timeout")) return "TIMEOUT";
+      if (msg.includes("econnrefused") || msg.includes("refused")) return "CONNECTION_REFUSED";
+      if (msg.includes("enotfound") || msg.includes("network")) return "NETWORK_ERROR";
+      if ("code" in err && err.code) return String(err.code);
     }
     return "REQUEST_FAILED";
   }

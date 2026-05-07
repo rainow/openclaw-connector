@@ -7,6 +7,7 @@ import type { ILogger } from "./types.js";
 const SENSITIVE_KEYS = new Set([
   "token",
   "password",
+  "cookie",
   "secret",
   "apikey",
   "auth",

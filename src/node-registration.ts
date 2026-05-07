@@ -4,6 +4,8 @@
 
 import { EventEmitter } from "events";
 import type { ILogger, InvokeRequest, InvokeResult } from "./types.js";
+import { GatewayClientLite, type GatewayClientOptions } from "./gateway-client-lite.js";
+import { loadOrCreateDeviceIdentity } from "./device-identity-utils.js";
 
 export interface NodeRegistrationOptions {
   id: string;
@@ -11,6 +13,7 @@ export interface NodeRegistrationOptions {
   url: string;
   token?: string;
   password?: string;
+  cookie?: string;
   commands: string[];
   logger: ILogger;
   onInvoke: (nodeId: string, payload: InvokeRequest) => Promise<InvokeResult>;
@@ -18,15 +21,17 @@ export interface NodeRegistrationOptions {
 }
 
 /**
- * NodeRegistration: Real implementation using GatewayClient from openclaw
+ * NodeRegistration: Real implementation using GatewayClientLite
  * Connects as a node to Gateway B and handles invoke requests
  */
+
 export class NodeRegistration extends EventEmitter {
   private id: string;
   private displayName: string;
   private url: string;
   private token?: string;
   private password?: string;
+  private cookie?: string;
   private commands: string[];
   private logger: ILogger;
   private onInvoke: (nodeId: string, payload: InvokeRequest) => Promise<InvokeResult>;
@@ -35,10 +40,8 @@ export class NodeRegistration extends EventEmitter {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private backoffMs = 1000;
 
-  // GatewayClient instance will be created dynamically
-  private gatewayClientInstance: any = null;
-  // Cache the GatewayClient class
-  private static gatewayClientClass: any = null;
+  // GatewayClientLite instance
+  private gatewayClientInstance: GatewayClientLite | null = null;
 
   constructor(opts: NodeRegistrationOptions) {
     super();
@@ -47,28 +50,11 @@ export class NodeRegistration extends EventEmitter {
     this.url = opts.url;
     this.token = opts.token;
     this.password = opts.password;
+    this.cookie = opts.cookie;
     this.commands = opts.commands;
     this.logger = opts.logger;
     this.onInvoke = opts.onInvoke;
     this.deviceIdentityPath = opts.deviceIdentityPath; // Store per-remote device identity path
-  }
-
-  /**
-   * Lazy-load GatewayClient from openclaw package
-   */
-  private getGatewayClientClass(): any {
-    if (NodeRegistration.gatewayClientClass !== null) {
-      return NodeRegistration.gatewayClientClass;
-    }
-
-    try {
-      // Try to load from openclaw package
-      const openclawModule = require("openclaw");
-      NodeRegistration.gatewayClientClass = openclawModule.GatewayClient ?? null;
-      return NodeRegistration.gatewayClientClass;
-    } catch {
-      return null;
-    }
   }
 
   isReady(): boolean {
@@ -83,27 +69,43 @@ export class NodeRegistration extends EventEmitter {
     });
 
     try {
-      const GatewayClient = this.getGatewayClientClass();
-      if (!GatewayClient) {
-        throw new Error(
-          "GatewayClient not available. Make sure openclaw is installed."
-        );
+      // Load or create device identity for this node
+      let deviceIdentity = undefined;
+      if (this.deviceIdentityPath) {
+        try {
+          deviceIdentity = loadOrCreateDeviceIdentity(this.deviceIdentityPath);
+          this.logger.debug(
+            `Loaded device identity from ${this.deviceIdentityPath}: ${deviceIdentity.deviceId}`
+          );
+        } catch (err) {
+          this.logger.debug(
+            `Failed to load device identity from ${this.deviceIdentityPath}: ${String(err)}`
+          );
+          // Continue without device identity - it will use client.id as fallback
+        }
       }
 
-      // Create GatewayClient instance with node mode
-      const clientOpts: any = {
+      // Strategy: Declare ONLY the commands that make sense to call via nodes.invoke
+      // We filter out "nodes.*" commands since they refer to the local gateway's nodes,
+      // which doesn't make sense when called from a remote gateway
+      // Valid commands: sessions.list, sessions.send, gateway.status
+      const validNodeCommands = this.commands.filter(
+        cmd => !cmd.startsWith("nodes.")
+      );
+
+      const clientOpts: GatewayClientOptions = {
         url: this.url,
-        mode: "node", // Connect as node
-        role: "node", // Node role
-        clientName: "connector-node", // Identify self as connector node
-        clientDisplayName: `Connector-${this.id}`,
-        instanceId: this.id,
-        commands: this.commands, // Register commands this node supports
-        // CRITICAL: Use per-remote device identity to avoid nodeId conflicts (PLAN Section 4.3)
-        ...(this.deviceIdentityPath && { deviceIdentityPath: this.deviceIdentityPath }),
+        requestTimeoutMs: 30000,
+        role: "node",  // NodeRegistration connects as a node to register commands
         // Set auth based on what's provided
         ...(this.token && { token: this.token }),
         ...(this.password && { password: this.password }),
+        ...(this.cookie && { cookie: this.cookie }),
+        ...(deviceIdentity && { deviceIdentity }),
+        commands: validNodeCommands,  // Only non-node commands
+        caps: this.commands,  // Full capabilities documentation
+        permissions: undefined,
+        pathEnv: undefined,
       };
 
       // Wire up event handlers
@@ -131,6 +133,12 @@ export class NodeRegistration extends EventEmitter {
 
       // Handle invoke requests from gateway
       clientOpts.onEvent = (evt: any) => {
+        // Log all events for debugging
+        this.logger.debug("Received gateway event", {
+          event: evt.event,
+          nodeId: this.id,
+        });
+
         if (evt.event !== "node.invoke.request") {
           return;
         }
@@ -146,11 +154,27 @@ export class NodeRegistration extends EventEmitter {
       };
 
       // Initialize and start client
-      this.gatewayClientInstance = new GatewayClient(clientOpts);
-      this.gatewayClientInstance.start();
+      this.gatewayClientInstance = new GatewayClientLite(clientOpts);
+      
+      // Wait for connection event
+      await new Promise<void>((resolve, reject) => {
+        if (!this.gatewayClientInstance) {
+          reject(new Error("GatewayClientLite not created"));
+          return;
+        }
 
-      // Wait for successful handshake
-      await this.waitForReady();
+        const timeout = setTimeout(() => {
+          reject(new Error("Connection timeout after 30000ms"));
+        }, 30000);
+
+        // Listen for connection event
+        this.gatewayClientInstance.on("connected", () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+
+        this.gatewayClientInstance.start();
+      });
 
       this.ready = true;
       this.backoffMs = 1000; // Reset backoff on successful connection
@@ -159,20 +183,6 @@ export class NodeRegistration extends EventEmitter {
         nodeId: this.id,
         displayName: this.displayName,
         commands: this.commands.length,
-      });
-
-      this.logger.logEvent("node.pair.pending", {
-        nodeId: this.id,
-        displayName: this.displayName,
-        deviceIdentityPath: this.deviceIdentityPath ?? "default",
-      });
-
-      // Log node.pair.approved when connection is established (PLAN Section 4.5)
-      // Note: In practice, approval happens via 'openclaw nodes approve' on Gateway B.
-      // Here we log that the node is ready and waiting for or has completed pairing.
-      this.logger.logEvent("node.pair.approved", {
-        nodeId: this.id,
-        displayName: this.displayName,
       });
     } catch (err) {
       this.logger.logEvent("node.connect.fail", {
@@ -194,7 +204,7 @@ export class NodeRegistration extends EventEmitter {
 
     if (this.gatewayClientInstance) {
       try {
-        await this.gatewayClientInstance.stop();
+        this.gatewayClientInstance.stop();
       } catch (err) {
         this.logger.debug(`Error stopping gateway client: ${String(err)}`);
       }
@@ -208,8 +218,9 @@ export class NodeRegistration extends EventEmitter {
 
   /**
    * Send invoke result back to Gateway B
+   * Note: Must use the nodeId from the original invoke request, not this.id
    */
-  async sendResult(invokeId: string, result: InvokeResult): Promise<void> {
+  async sendResult(invokeId: string, result: InvokeResult, requestNodeId?: string): Promise<void> {
     if (!this.ready) {
       this.logger.warn("Cannot send result: node not ready", {
         invokeId,
@@ -227,18 +238,18 @@ export class NodeRegistration extends EventEmitter {
     }
 
     try {
-      const params = this.buildResultParams(invokeId, result);
+      const params = this.buildResultParams(invokeId, result, requestNodeId);
       await this.gatewayClientInstance.request("node.invoke.result", params);
 
       this.logger.logEvent("invoke.result.send", {
         invokeId,
-        nodeId: this.id,
+        nodeId: requestNodeId ?? this.id,
         ok: result.ok,
       });
     } catch (err) {
       this.logger.error("Failed to send invoke result", {
         invokeId,
-        nodeId: this.id,
+        nodeId: requestNodeId ?? this.id,
         error: String(err),
       });
     }
@@ -260,36 +271,37 @@ export class NodeRegistration extends EventEmitter {
    */
   private async handleInvokeEvent(payload: InvokeRequest): Promise<void> {
     const invokeId = payload.id;
+    const requestNodeId = payload.nodeId;  // Original nodeId from Gateway request
 
     try {
       this.logger.logEvent("invoke.request.received", {
         invokeId,
-        nodeId: this.id,
+        nodeId: requestNodeId,
         command: payload.command,
       });
 
-      // Call user's invoke handler
+      // Call user's invoke handler (pass this.id for routing, but track the request's nodeId)
       const result = await this.onInvoke(this.id, payload);
 
-      // Send result back
-      await this.sendResult(invokeId, result);
+      // Send result back with the original request's nodeId
+      await this.sendResult(invokeId, result, requestNodeId);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
 
       this.logger.error("Invoke handler error", {
         invokeId,
-        nodeId: this.id,
+        nodeId: requestNodeId,
         error: error.message,
       });
 
-      // Send error result back
+      // Send error result back with the original request's nodeId
       await this.sendResult(invokeId, {
         ok: false,
         error: {
           code: "HANDLER_ERROR",
           message: error.message,
         },
-      });
+      }, requestNodeId);
     }
   }
 
@@ -323,10 +335,13 @@ export class NodeRegistration extends EventEmitter {
 
   /**
    * Build result params for node.invoke.result RPC
+   * CRITICAL: nodeId must match the original request's nodeId (from Gateway),
+   * not our local this.id. This ensures Gateway's nodeId validation passes.
    */
   private buildResultParams(
     invokeId: string,
-    result: InvokeResult
+    result: InvokeResult,
+    requestNodeId?: string
   ): {
     id: string;
     nodeId: string;
@@ -337,7 +352,7 @@ export class NodeRegistration extends EventEmitter {
   } {
     const params: any = {
       id: invokeId,
-      nodeId: this.id,
+      nodeId: requestNodeId ?? this.id,  // Use request nodeId if available, fallback to this.id
       ok: result.ok,
     };
 
@@ -354,41 +369,6 @@ export class NodeRegistration extends EventEmitter {
     }
 
     return params;
-  }
-
-  /**
-   * Wait for GatewayClient to become ready
-   */
-  private async waitForReady(): Promise<void> {
-    const maxWaitMs = 10000;
-    const pollIntervalMs = 100;
-    const startTime = Date.now();
-
-    return new Promise<void>((resolve, reject) => {
-      const poll = () => {
-        if (!this.gatewayClientInstance) {
-          reject(new Error("GatewayClient was destroyed"));
-          return;
-        }
-
-        // Check if ws is open
-        if (this.gatewayClientInstance.ws && this.gatewayClientInstance.ws.readyState === 1) {
-          // WebSocket.OPEN = 1
-          resolve();
-          return;
-        }
-
-        const elapsed = Date.now() - startTime;
-        if (elapsed > maxWaitMs) {
-          reject(new Error(`Gateway client connect timeout after ${maxWaitMs}ms`));
-          return;
-        }
-
-        setTimeout(poll, pollIntervalMs);
-      };
-
-      poll();
-    });
   }
 
   private scheduleReconnect(): void {

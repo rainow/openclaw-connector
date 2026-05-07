@@ -4,11 +4,8 @@
 
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
 import { z } from "zod";
 import type { CircuitBreakerConfig, CommandPolicy, ConnectorConfig } from "./types.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const CommandPolicySchema = z.object({
   mode: z.enum(["allow_all", "allow_list"]).default("allow_all"),
@@ -27,6 +24,7 @@ const RemoteGatewayConfigSchema = z.object({
   url: z.string().url(),
   token: z.string().optional(),
   password: z.string().optional(),
+  cookie: z.string().optional(),
   enabled: z.boolean().default(true),
   timeoutMs: z.number().int().min(100).default(30000),
   commandPolicy: CommandPolicySchema.optional(),
@@ -36,6 +34,7 @@ const GatewayBConfigSchema = z.object({
   url: z.string().url(),
   token: z.string().optional(),
   password: z.string().optional(),
+  cookie: z.string().optional(),
 });
 
 const ConnectorConfigSchema = z.object({

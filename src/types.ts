@@ -19,6 +19,7 @@ export type RemoteGatewayConfig = {
   url: string;
   token?: string;
   password?: string;
+  cookie?: string;
   enabled?: boolean;
   timeoutMs?: number;
   commandPolicy?: CommandPolicy;
@@ -28,6 +29,7 @@ export type GatewayBConfig = {
   url: string;
   token?: string;
   password?: string;
+  cookie?: string;
 };
 
 export type ConnectorConfig = {

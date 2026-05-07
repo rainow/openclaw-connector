@@ -68,20 +68,31 @@ export class CircuitBreaker implements ICircuitBreaker {
         this.failureCount = 0; // Full reset on successful probe
       }
     } else if (this.state === "CLOSED") {
-      // Reset failure count on success (decrement approach for gradual recovery)
-      this.failureCount = Math.max(0, this.failureCount - 1);
+      // PLAN requires consecutive failures: any success resets the counter
+      this.failureCount = 0;
     }
   }
 
   recordFailure(error: unknown): void {
-    // Only count breaker-triggering errors (availability/network issues)
+    // Only availability/network issues should trigger breaker opening.
+    // In HALF_OPEN, non-triggering errors still consume a probe slot and must be released.
     if (!shouldTriggerBreaker(error)) {
+      if (this.state === "HALF_OPEN") {
+        this.halfOpenInFlight = Math.max(0, this.halfOpenInFlight - 1);
+        // Treat non-availability errors as a successful probe from breaker perspective.
+        if (this.halfOpenInFlight === 0) {
+          this.transitionTo("CLOSED");
+          this.failureCount = 0;
+        }
+      }
       return;
     }
 
     this.lastFailureTime = Date.now();
 
     if (this.state === "HALF_OPEN") {
+      // Availability error during probe: reopen breaker and reset probe slots.
+      this.halfOpenInFlight = 0;
       this.transitionTo("OPEN");
       this.failureCount = this.failureThreshold;
       return;

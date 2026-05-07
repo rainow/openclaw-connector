@@ -73,8 +73,8 @@ function extractErrorCode(error: unknown): string | undefined {
     const sysErr = error as unknown as { code?: string; message?: string };
     if (sysErr.code) return sysErr.code;
 
-    // Check error message for common patterns
-    const msg = error.message;
+    // Check error message for common patterns (case-insensitive)
+    const msg = error.message.toLowerCase();
     if (msg.includes("timeout")) return "TIMEOUT";
     if (msg.includes("connect")) return "NOT_CONNECTED";
     if (msg.includes("network")) return "ENETUNREACH";

@@ -111,7 +111,7 @@ export class Bridge {
       };
     }
 
-    // Step 3: Check command permission BEFORE breaker (PLAN Section 5 order fix)
+    // Step 3: Check command permission (PLAN Section 5)
     const isAllowed = this.isCommandAllowed(command, remoteId);
     if (!isAllowed) {
       return {
@@ -120,7 +120,16 @@ export class Bridge {
       };
     }
 
-    // Step 4: Check breaker state
+    // Step 4: Check handler exists (before breaker to avoid occupying halfOpenInFlight slot)
+    const handler = this.commandHandlers.get(command);
+    if (!handler) {
+      return {
+        ok: false,
+        error: { code: "NOT_FOUND", message: `command ${command} not supported` },
+      };
+    }
+
+    // Step 5: Check breaker state (MUST be after handler check to prevent halfOpenInFlight leak)
     const breaker = this.breakers.get(remoteId);
     if (breaker && !breaker.canExecute()) {
       const state = breaker.getState();
@@ -134,15 +143,6 @@ export class Bridge {
       return {
         ok: false,
         error: { code: "CIRCUIT_OPEN", message: `circuit breaker ${state} for ${remoteId}` },
-      };
-    }
-
-    // Step 5: Check handler exists
-    const handler = this.commandHandlers.get(command);
-    if (!handler) {
-      return {
-        ok: false,
-        error: { code: "NOT_FOUND", message: `command ${command} not supported` },
       };
     }
 
@@ -218,20 +218,31 @@ export class Bridge {
   }
 
   /**
-   * Execute handler with timeout
+   * Execute handler with timeout (timer is properly cleaned up on completion)
    */
   private executeWithTimeout<T>(
     fn: () => Promise<T>,
     timeoutMs: number
   ): Promise<T> {
-    return Promise.race([
-      fn(),
-      new Promise<T>((_, reject) =>
-        setTimeout(
-          () => reject(new Error("TIMEOUT")),
-          timeoutMs
-        )
-      ),
-    ]);
+    let timer: NodeJS.Timeout | null = null;
+    const timeoutPromise = new Promise<T>((_, reject) => {
+      timer = setTimeout(() => {
+        timer = null; // Prevent double-clear
+        reject(new Error("TIMEOUT"));
+      }, timeoutMs);
+    });
+
+    const result = Promise.race([fn(), timeoutPromise]);
+
+    // Clean up timer when the race resolves (whether from success or timeout)
+    // Note: We don't await here — we just schedule cleanup after the promise settles
+    result.finally(() => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    });
+
+    return result;
   }
 }

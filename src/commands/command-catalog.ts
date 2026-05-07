@@ -33,6 +33,12 @@ export const BUILTIN_COMMANDS: Record<string, CommandMetadata> = {
     enabled: true,
     category: "session",
   },
+  "sessions.get_messages": {
+    name: "sessions.get_messages",
+    description: "Get recent messages from a session (for polling agent responses)",
+    enabled: true,
+    category: "session",
+  },
 
   // Node commands
   "nodes.list": {

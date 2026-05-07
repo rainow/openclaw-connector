@@ -55,7 +55,15 @@ export function loadOrCreateRemoteDeviceIdentity(
       const identity = JSON.parse(content);
       return identity;
     } catch (err) {
-      console.error(`Failed to load device identity from ${identityPath}:`, err);
+      // Output structured error log (pure utility module, no logger injection)
+      console.error(JSON.stringify({
+        ts: new Date().toISOString(),
+        level: "ERROR",
+        tag: "device-identity-manager",
+        msg: "Failed to load device identity",
+        identityPath,
+        error: err instanceof Error ? err.message : String(err),
+      }));
       // Fall through to create new identity
     }
   }
@@ -104,7 +112,15 @@ export function clearRemoteDeviceIdentity(stateDir: string, remoteId: string): b
       fs.unlinkSync(identityPath);
       return true;
     } catch (err) {
-      console.error(`Failed to clear device identity at ${identityPath}:`, err);
+      // Output structured error log (pure utility module, no logger injection)
+      console.error(JSON.stringify({
+        ts: new Date().toISOString(),
+        level: "ERROR",
+        tag: "device-identity-manager",
+        msg: "Failed to clear device identity",
+        identityPath,
+        error: err instanceof Error ? err.message : String(err),
+      }));
       return false;
     }
   }

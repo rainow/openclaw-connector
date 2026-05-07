@@ -161,13 +161,26 @@ npm start
 - `openMs`: 在 OPEN 状态下等待的时间（默认：15000ms）
 - `halfOpenMaxInFlight`: HALF_OPEN 中的最大并发请求数（默认：1）
 
+## 身份验证
+
+使用 `token` 字段进行网关身份验证：
+
+```json
+{
+  "id": "gateway-a",
+  "url": "ws://gateway-a.local:18789",
+  "token": "your-auth-token"
+}
+```
+
 ## 支持的命令
 
 1. **sessions.list** - 列出远程网关上的所有会话
 2. **sessions.send** - 向远程网关上的会话发送消息
-3. **nodes.list** - 列出远程网关管理的所有节点
-4. **nodes.invoke** - 调用远程网关上节点管理的命令
-5. **gateway.status** - 获取远程网关的健康状态
+3. **sessions.get_messages** - 获取远程网关上会话的消息（自动回退到 `sessions.get`）
+4. **nodes.list** - 列出远程网关管理的所有节点
+5. **nodes.invoke** - 调用远程网关上节点管理的命令
+6. **gateway.status** - 获取远程网关的健康状态
 
 ## 日志记录
 
@@ -193,28 +206,7 @@ npm start
 
 ## 文档
 
-详细文档请参阅 `docs/` 目录：
-
-### 快速开始
-- **[docs/00_START_HERE.md](docs/00_START_HERE.md)** - 概览和快速开始
-- **[docs/QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md)** - 快速参考
-
-### 架构与设计
-- **[docs/PLAN.md](docs/PLAN.md)** - 架构和设计决策
-- **[docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md)** - 完整项目概览
-
-### 开发
-- **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** - 开发指南
-- **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** - 生产环境部署指南
-- **[docs/OPENCLAW_INTEGRATION.md](docs/OPENCLAW_INTEGRATION.md)** - GatewayClient 集成指南
-
-### 可选增强功能 (M3)
-- **[docs/OPTIONAL_ENHANCEMENTS.md](docs/OPTIONAL_ENHANCEMENTS.md)** - M3 功能指南
-- **[docs/QUICK_START_ENHANCEMENTS.md](docs/QUICK_START_ENHANCEMENTS.md)** - M3 快速开始示例
-- **[docs/M3_ENHANCEMENTS.md](docs/M3_ENHANCEMENTS.md)** - M3 完成报告
-
-### 里程碑
-- **[docs/M2_SUMMARY.md](docs/M2_SUMMARY.md)** - M2 里程碑总结
+详细文档请参阅 `docs/` 目录。
 
 ## 状态
 
@@ -248,6 +240,29 @@ cat connector-logs.log | jq '.[] | select(.event=="remote.connect.fail")'
 1. 增加单个远程网关的 `timeoutMs`
 2. 检查断路器的 `halfOpenMaxInFlight` 设置
 3. 监控到远程网关的网络延迟
+
+## 高级选项：SSO Cookie 身份验证（可选）
+
+对于受单点登录（SSO）保护的网关，你可以选择使用 `cookie` 字段传递会话 Cookie：
+
+```json
+{
+  "id": "gateway-b",
+  "url": "wss://gateway-b.example.com:18789",
+  "token": "your-auth-token",
+  "cookie": "session_id=xxx; sso_token=yyy"
+}
+```
+
+**如何提取 Cookie：**
+1. 在浏览器中打开网关 URL
+2. 完成 SSO 登录
+3. 打开开发者工具（F12）→ Network 标签
+4. 检查任何已认证的 HTTP 请求
+5. 复制 `Cookie` 请求头的值
+6. 粘贴到连接器配置中
+
+**说明**：`token` 和 `cookie` 可以一起使用进行双层身份验证。Cookie 在 WebSocket 握手头中传递以绕过 SSO 验证。
 
 ## 架构
 

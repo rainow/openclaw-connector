@@ -10,8 +10,6 @@
  * - Bridge routing and command handlers
  */
 
-import path from "path";
-import { fileURLToPath } from "url";
 import { loadConfig, getConnectorStateDir } from "./config.js";
 import { createLogger } from "./logger.js";
 import { RemoteClient } from "./remote-client.js";
@@ -20,7 +18,6 @@ import { Bridge } from "./bridge.js";
 import { COMMANDS, getCommandNames } from "./commands/index.js";
 import { getDeviceIdentityPath, listRemoteDeviceIdentities } from "./device-identity-manager.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const logger = createLogger("connector");
 
 async function main() {
@@ -71,13 +68,19 @@ async function main() {
         continue;
       }
 
+      // Create per-remote device identity path for both RemoteClient and NodeRegistration
+      // This ensures each remote connection has its own unique deviceId
+      const deviceIdentityPath = getDeviceIdentityPath(stateDir, remote.id);
+
       const remoteClient = new RemoteClient({
         id: remote.id,
         url: remote.url,
         token: remote.token,
         password: remote.password,
+        cookie: remote.cookie,
         timeoutMs: remote.timeoutMs,
         logger,
+        deviceIdentityPath,
       });
 
       remoteClients.set(remote.id, remoteClient);
@@ -86,7 +89,6 @@ async function main() {
 
       // Create node registration for this remote
       const nodeId = `connector-${remote.id}`;
-      const deviceIdentityPath = getDeviceIdentityPath(stateDir, remote.id);
 
       const nodeRegistration = new NodeRegistration({
         id: nodeId,
@@ -94,6 +96,7 @@ async function main() {
         url: config.gatewayB.url,
         token: config.gatewayB.token,
         password: config.gatewayB.password,
+        cookie: config.gatewayB.cookie,
         commands: getCommandNames(),
         logger,
         deviceIdentityPath,

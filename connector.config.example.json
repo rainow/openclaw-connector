@@ -1,7 +1,8 @@
 {
   "gatewayB": {
     "url": "ws://127.0.0.1:18789",
-    "token": "${GATEWAY_B_TOKEN}"
+    "token": "${GATEWAY_B_TOKEN}",
+    "cookie": "${GATEWAY_B_COOKIE}"
   },
   "commandPolicy": {
     "mode": "allow_all"
@@ -17,6 +18,7 @@
       "id": "machine-a",
       "url": "wss://remote-a.example.com:18789",
       "token": "${GATEWAY_A_TOKEN}",
+      "cookie": "${GATEWAY_A_COOKIE}",
       "enabled": true,
       "timeoutMs": 30000,
       "commandPolicy": {

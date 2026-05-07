@@ -11,6 +11,7 @@ dist/
 
 # Configuration
 connector.config.json
+connector.log
 .env
 .env.local
 
@@ -28,6 +29,9 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Documentation (not included in distribution)
+docs/
 
 # Misc
 .cache/
