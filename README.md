@@ -243,9 +243,9 @@ For gateways protected by Single Sign-On (SSO), you can optionally use the `cook
 ## Architecture
 
 ```
-┌─────────────────────┐
-│    Gateway B (主控) │
-└──────────┬──────────┘
+┌───────────────────────────┐
+│    Gateway B (Controller) │
+└──────────┬────────────────┘
            │
       (node role)
            │
