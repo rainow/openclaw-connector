@@ -269,6 +269,4 @@ cat connector-logs.log | jq '.[] | select(.event=="remote.connect.fail")'
 
 MIT
 
----
 
-**有问题或建议？** 请参阅 [docs/00_START_HERE.md](docs/00_START_HERE.md) 获取更多帮助。
